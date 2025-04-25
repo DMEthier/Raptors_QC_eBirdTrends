@@ -6,7 +6,10 @@ editor_options:
   chunk_output_type: console
 ---
 
-##eBird Trends for raptor in Quebec 
+##eBird Trends for raptor in Quebec
+
+See eBird for methods and instructions: 
+https://ebird.github.io/ebirdst/articles/trends.html
 
 Load libraries and create output directories
 
@@ -44,10 +47,10 @@ eBird<-ebirdst_runs
 table<-as.data.frame(matrix(data = NA, nrow = 1, ncol = 7, byrow = FALSE,
                              dimnames = NULL))
 #provide column names
-names(table) <- c('sp_code', 'BCR','eBird_Trends', 'epercent_change', 'eUPC', 'eLPC', 'esig')
+names(table) <- c('sp_code', 'BCR','eBird_QCRaptor_Trends', 'epercent_change', 'eUPC', 'eLPC', 'esig')
 
 #write table
-write.table(table, paste("./Outputs/", "/eBird_Trends.csv", sep=""), row.names = FALSE, append = FALSE, quote = FALSE, sep = ",")
+write.table(table, paste("./Outputs/", "eBird_Trends.csv", sep=""), row.names = FALSE, append = FALSE, quote = FALSE, sep = ",")
 
 #load the shape file for BCR in Canada
 bcr<-st_read("Data/bcrPolygon.shp")

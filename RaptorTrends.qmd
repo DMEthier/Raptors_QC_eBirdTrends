@@ -1,0 +1,131 @@
+---
+title: "Raptor eBird Trends"
+format: html
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+##eBird Trends for raptor in Quebec 
+
+Load libraries and create output directories
+
+```{r}
+#remotes::install_github("ebird/ebirdst")
+library(tidyverse)
+library(sf)
+library(naturecounts)
+library(ebirdst)
+
+if(!dir.exists("Outputs")) dir.create("Outputs")
+if(!dir.exists("Data")) dir.create("Data") #in this directory is the BCR shape file
+
+#eBird Access Key
+set_ebirdst_access_key("n1c1d8doirt", overwrite = TRUE)
+
+```
+
+Assign species codes to enable data download from eBird
+
+Northern Harrier = norhar2
+American Kestrel = amekes
+
+```{r}
+
+sp.list<-c("amekes", "norhar2")
+
+```
+
+```{r eBird trends}
+
+eBird<-ebirdst_runs
+
+#create data frame with 0 rows and 2 columns
+table<-as.data.frame(matrix(data = NA, nrow = 1, ncol = 7, byrow = FALSE,
+                             dimnames = NULL))
+#provide column names
+names(table) <- c('sp_code', 'BCR','eBird_Trends', 'epercent_change', 'eUPC', 'eLPC', 'esig')
+
+#write table
+write.table(table, paste("./Outputs/", "/eBird_Trends.csv", sep=""), row.names = FALSE, append = FALSE, quote = FALSE, sep = ",")
+
+#load the shape file for BCR in Canada
+bcr<-st_read("Data/bcrPolygon.shp")
+bcr.list<-c(12, 13, 14, 8)
+
+for(m in 1:length(sp.list)) { 
+  for(n in 1:length(bcr.list)){
+  
+  #m<-1  #for testing
+  #n<-1  #for testing
+    
+  species.name <- sp.list[m]
+  qq<-bcr %>% filter(bcr==bcr.list[n])
+  
+  test<-eBird %>% filter(species_code==species.name)  #check that there is eBird trend data
+  
+  if(nrow(test)>0){
+    if(test$has_trends==TRUE){
+      
+      ebirdst_download_trends(species.name, 
+                              force = TRUE,
+                              show_progress = TRUE)
+      
+      trends_folds <- load_trends(species.name, fold_estimates = TRUE)
+      
+      # convert fold-level trends estimates to sf format
+      trends_sf <-  st_as_sf(trends_folds, 
+                             coords = c("longitude", "latitude"), 
+                             crs = 4326)
+      
+      # attach state to the fold-level trends data
+      trends_sf <- st_join(trends_sf, qq, left = FALSE)
+      
+      # abundance-weighted average trend by region and fold
+      trends_can_folds <- trends_sf %>%
+        st_drop_geometry() %>%
+        group_by(bcr_name, fold) %>%
+        summarize(abd_ppy = sum(abd * abd_ppy) / sum(abd),
+                  .groups = "drop")
+      
+      # summarize across folds for each state
+      trends_can <- trends_can_folds %>% 
+        group_by(bcr_name) %>%
+        summarise(eBird_trend = median(abd_ppy, na.rm = TRUE),
+                  eLCI = quantile(abd_ppy, 0.10, na.rm = TRUE),
+                  eUCI = quantile(abd_ppy, 0.90, na.rm = TRUE),
+                  .groups = "drop") 
+      trends_can$species.name<-species.name
+      trends_can$region<-bcr.list[n]
+      trends_can$TrendSource<-"eBird"
+      trends_can$start_year<-test$trends_start_year
+      trends_can$end_year<-test$trends_end_year
+      period_num = trends_can$end_year - trends_can$start_year
+      
+      trends_can<-trends_can %>% dplyr::select(species.name, region, eBird_trend, eLCI, eUCI) %>% mutate(
+        per_trend = eBird_trend/100,
+        per_LCI = eLCI/100, 
+        per_UCI = eUCI/100, 
+        # Some programs don't have percent change, we therefore calculate it here for them all and replace the old data. Calculation checked on BBS to ensure it was correct.Only minor rounding difference noted. 
+        epercent_change = ((1+per_trend)^period_num-1)*100,
+        eLPC = ((1+per_LCI)^period_num-1)*100,
+        eUPC = ((1+per_UCI)^period_num-1)*100, 
+        pct_sign = ifelse(eLCI<0 & eUCI>0, "0", ifelse(eLCI<0 & eUCI<0, "-", ifelse(eLCI>0 & eUCI>0, "+", "NA")))) %>% 
+        dplyr::select(species.name, region, eBird_trend, epercent_change, eLPC, eUPC, pct_sign)
+      
+      
+      write.table(trends_can, 
+                  file = paste("./Outputs/","eBird_Trends.csv", sep=""),
+                  row.names = FALSE, 
+                  append = TRUE, 
+                  quote = FALSE, 
+                  sep = ",", 
+                  col.names = FALSE)
+      
+    } #if has trends==True
+  } #end nrows
+} #end bcr loop  
+} #end species loop
+
+
+```
